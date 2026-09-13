@@ -20,9 +20,61 @@ function escapeHtml(s: string | null | undefined): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Line breaks in user text must survive HTML escaping so long descriptions wrap correctly. */
 function escapeMultiline(s: string | null | undefined): string {
   return escapeHtml(s).replace(/\n/g, "<br/>");
+}
+
+function mimeTypeForUri(uri: string): string {
+  const clean = uri.toLowerCase().split("?")[0];
+  if (clean.endsWith(".png")) return "image/png";
+  if (clean.endsWith(".webp")) return "image/webp";
+  if (clean.endsWith(".gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+async function imageUriToDataUri(uri: string | null | undefined): Promise<string | null> {
+  if (!uri) return null;
+  if (uri.startsWith("data:image/")) return uri;
+
+  try {
+    const base64 = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    if (!base64) return null;
+    return `data:${mimeTypeForUri(uri)};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
+async function prepareImagesForPdf(
+  full: ChangeOrderFull,
+  company: CompanyProfile
+): Promise<{ full: ChangeOrderFull; company: CompanyProfile }> {
+  const preparedLogo = await imageUriToDataUri(company.logoUri);
+
+  const preparedPhotos: ChangeOrderFull["photos"] = [];
+  for (const photo of full.photos) {
+    const source = await imageUriToDataUri(photo.uri);
+    if (source) preparedPhotos.push({ ...photo, uri: source });
+  }
+
+  let preparedApproval = full.approval;
+  if (full.approval) {
+    const signature = await imageUriToDataUri(full.approval.signatureUri);
+    preparedApproval = signature
+      ? { ...full.approval, signatureUri: signature }
+      : { ...full.approval, signatureUri: "" };
+  }
+
+  return {
+    company: { ...company, logoUri: preparedLogo },
+    full: {
+      ...full,
+      photos: preparedPhotos,
+      approval: preparedApproval,
+    },
+  };
 }
 
 function lineItemsTableRows(full: ChangeOrderFull, currency: CompanyProfile["currency"]): string {
@@ -90,7 +142,7 @@ function approvalHtml(full: ChangeOrderFull): string {
         </div>
       </div>
       <div class="signature-box">
-        <img src="${a.signatureUri}" class="signature-img" />
+        ${a.signatureUri ? `<img src="${a.signatureUri}" class="signature-img" />` : `<div class="signature-missing">Signature captured in app</div>`}
         <div class="signature-line">Signature</div>
       </div>
     </div>`;
@@ -98,6 +150,7 @@ function approvalHtml(full: ChangeOrderFull): string {
 
 function buildHtml(full: ChangeOrderFull, company: CompanyProfile): string {
   const { changeOrder: co, job, totals } = full;
+  const preparedBy = [company.ownerName, company.userRole].filter(Boolean).join(" · ");
 
   return `
   <html>
@@ -168,6 +221,7 @@ function buildHtml(full: ChangeOrderFull, company: CompanyProfile): string {
       .pending-badge { display: inline-block; background: #FCF3DE; color: #B7791F; font-weight: 800; padding: 6px 14px; border-radius: 6px; letter-spacing: 0.5px; font-size: 12px; }
       .signature-box { border: 1px solid #E2E5EA; border-radius: 8px; padding: 10px; width: 260px; page-break-inside: avoid; }
       .signature-img { width: 100%; height: 70px; object-fit: contain; }
+      .signature-missing { height: 70px; display: flex; align-items: center; justify-content: center; color: #8A93A2; font-size: 10.5px; }
       .signature-line { border-top: 1px solid #12161F; margin-top: 4px; padding-top: 4px; font-size: 10.5px; color: #5B6472; }
 
       .disclaimer { font-size: 10.5px; color: #8A93A2; margin-top: 26px; border-top: 1px solid #E2E5EA; padding-top: 12px; }
@@ -181,7 +235,9 @@ function buildHtml(full: ChangeOrderFull, company: CompanyProfile): string {
         <div>
           <div class="company-name">${escapeHtml(company.companyName)}</div>
           <div class="company-meta">
-            ${escapeHtml(company.address)}, ${escapeHtml(company.city)} ${escapeHtml(company.region)} ${escapeHtml(company.postalCode)}<br/>
+            ${preparedBy ? `Prepared by ${escapeHtml(preparedBy)}<br/>` : ""}
+            ${escapeHtml(company.trade)}${company.trade ? "<br/>" : ""}
+            ${escapeHtml(company.address)}${company.address && company.city ? ", " : ""}${escapeHtml(company.city)} ${escapeHtml(company.region)} ${escapeHtml(company.postalCode)}<br/>
             ${escapeHtml(company.phone)}${company.phone && company.email ? " · " : ""}${escapeHtml(company.email)}
             ${company.licenseNumber ? `<br/>License #${escapeHtml(company.licenseNumber)}` : ""}
           </div>
@@ -265,7 +321,8 @@ export async function generateChangeOrderPdf(
     throw new Error("This change order has no line items to include in the PDF.");
   }
 
-  const html = buildHtml(full, company);
+  const prepared = await prepareImagesForPdf(full, company);
+  const html = buildHtml(prepared.full, prepared.company);
 
   let printResult: { uri: string };
   try {
@@ -280,7 +337,7 @@ export async function generateChangeOrderPdf(
 
   try {
     await FileSystem.copyAsync({ from: printResult.uri, to: destUri });
-  } catch (e: any) {
+  } catch {
     return { uri: printResult.uri, filename };
   }
 
