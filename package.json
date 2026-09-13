@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/lib/__tests__/*.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/__tests__/*.test.ts",
+    "eas-build-post-install": "node scripts/prepare-expo-sqlite.js"
   },
   "dependencies": {
     "expo": "~51.0.0",
