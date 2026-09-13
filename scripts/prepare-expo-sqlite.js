@@ -82,7 +82,19 @@ async function downloadWithRetry(file, attempts = 4) {
       if (size < file.minBytes) {
         throw new Error(`${file.name} is unexpectedly small (${size} bytes)`);
       }
-      console.log(`[expo-sqlite] ${file.name} ready (${size} bytes).`);
+
+      // Expo SDK 52 vendors the same SQLite 3.45.3 amalgamation but renames
+      // public symbols from sqlite3_* to exsqlite3_* to avoid collisions.
+      // Expo SDK 51's native wrapper expects the canonical sqlite3_* API.
+      // Restore the original symbol names before compiling.
+      const original = fs.readFileSync(destination, 'utf8');
+      const restored = original.replace(/exsqlite3/g, 'sqlite3');
+      if (restored === original) {
+        throw new Error(`${file.name} did not contain Expo-prefixed SQLite symbols`);
+      }
+      fs.writeFileSync(destination, restored);
+
+      console.log(`[expo-sqlite] ${file.name} ready with canonical sqlite3 symbols (${size} bytes).`);
       return;
     } catch (error) {
       if (fs.existsSync(destination)) fs.rmSync(destination, { force: true });
@@ -121,7 +133,7 @@ async function main() {
   }
 
   fs.writeFileSync(gradlePath, gradle);
-  console.log('[expo-sqlite] Patched Android build to use SQLite 3.45.3 sources from Expo GitHub instead of sqlite.org.');
+  console.log('[expo-sqlite] Patched Android build to use SQLite 3.45.3 sources from Expo GitHub with SDK 51-compatible symbol names.');
 }
 
 main().catch((error) => {
