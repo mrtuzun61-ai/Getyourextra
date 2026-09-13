@@ -12,17 +12,16 @@ import { colors, spacing, typography } from "@/theme/theme";
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
-  const [needsSetup, setNeedsSetup] = useState(false);
+
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       try {
         await initDatabase();
-        if (cancelled) return;
-        setNeedsSetup(!hasCompletedCompanySetup());
       } catch (e: any) {
         if (!cancelled) {
           setInitError(
@@ -31,9 +30,12 @@ export default function RootLayout() {
           );
         }
       } finally {
-        if (!cancelled) setReady(true);
+        if (!cancelled) {
+          setReady(true);
+        }
       }
     })();
+
     return () => {
       cancelled = true;
     };
@@ -41,11 +43,17 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!ready || initError) return;
-    const inOnboardingFlow = segments[0] === "onboarding" || segments[0] === "company-setup";
-    if (needsSetup && !inOnboardingFlow) {
+
+    const setupComplete = hasCompletedCompanySetup();
+
+    const inOnboardingFlow =
+      segments[0] === "onboarding" ||
+      segments[0] === "company-setup";
+
+    if (!setupComplete && !inOnboardingFlow) {
       router.replace("/onboarding");
     }
-  }, [ready, initError, needsSetup, segments]);
+  }, [ready, initError, segments, router]);
 
   if (!ready) {
     return (
@@ -58,10 +66,26 @@ export default function RootLayout() {
   if (initError) {
     return (
       <View style={[styles.centered, { padding: spacing.lg }]}>
-        <Text style={[typography.h2, { textAlign: "center", marginBottom: spacing.sm }]}>
+        <Text
+          style={[
+            typography.h2,
+            {
+              textAlign: "center",
+              marginBottom: spacing.sm,
+            },
+          ]}
+        >
           GetYourExtra couldn't start
         </Text>
-        <Text style={{ color: colors.textSecondary, textAlign: "center" }}>{initError}</Text>
+
+        <Text
+          style={{
+            color: colors.textSecondary,
+            textAlign: "center",
+          }}
+        >
+          {initError}
+        </Text>
       </View>
     );
   }
@@ -78,5 +102,10 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.bg },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.bg,
+  },
 });
