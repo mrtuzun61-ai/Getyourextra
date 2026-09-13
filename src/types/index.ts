@@ -14,6 +14,7 @@ export interface CompanyProfile {
   companyName: string;
   logoUri: string | null;
   ownerName: string;
+  userRole: string;
   trade: string;
   phone: string;
   email: string;
