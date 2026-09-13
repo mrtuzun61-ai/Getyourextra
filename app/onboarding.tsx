@@ -1,5 +1,14 @@
 import React, { useRef, useState } from "react";
-import { View, Text, StyleSheet, FlatList, Dimensions, Pressable } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Dimensions,
+  Pressable,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { colors, spacing, typography } from "@/theme/theme";
@@ -24,12 +33,20 @@ export default function Onboarding() {
       router.replace("/company-setup");
       return;
     }
-    listRef.current?.scrollToIndex({ index: index + 1, animated: true });
+
+    const nextIndex = Math.min(index + 1, SLIDES.length - 1);
+    setIndex(nextIndex);
+    listRef.current?.scrollToOffset({ offset: nextIndex * width, animated: true });
+  };
+
+  const handleScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
+    setIndex(Math.max(0, Math.min(newIndex, SLIDES.length - 1)));
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={{ alignItems: "flex-end", paddingHorizontal: spacing.lg }}>
+      <View style={styles.topBar}>
         <Pressable onPress={() => router.replace("/company-setup")} hitSlop={12}>
           <Text style={styles.skip}>Skip</Text>
         </Pressable>
@@ -41,12 +58,10 @@ export default function Onboarding() {
         keyExtractor={(_, i) => String(i)}
         horizontal
         pagingEnabled
+        bounces={false}
         showsHorizontalScrollIndicator={false}
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
-        onMomentumScrollEnd={(e) => {
-          const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
-          setIndex(newIndex);
-        }}
+        onMomentumScrollEnd={handleScrollEnd}
         renderItem={({ item }) => (
           <View style={[styles.slide, { width }]}>
             <Text style={styles.emoji}>{item.emoji}</Text>
@@ -62,7 +77,11 @@ export default function Onboarding() {
       </View>
 
       <View style={styles.footer}>
-        <PrimaryButton title={isLast ? "Set Up My Company" : "Next"} onPress={goNext} variant="primary" />
+        <PrimaryButton
+          title={isLast ? "Set Up My Company" : "Next"}
+          onPress={goNext}
+          variant="primary"
+        />
       </View>
     </SafeAreaView>
   );
@@ -70,6 +89,7 @@ export default function Onboarding() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.brandDark },
+  topBar: { alignItems: "flex-end", paddingHorizontal: spacing.lg },
   skip: { color: "#C7D4DC", fontSize: 15, fontWeight: "600", padding: spacing.sm },
   slide: { alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.xl },
   emoji: { fontSize: 64, marginBottom: spacing.lg },
