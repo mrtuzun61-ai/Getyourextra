@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, Text, ScrollView, StyleSheet, Alert, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system";
@@ -27,6 +27,8 @@ export default function ApprovalScreen() {
   const [approved, setApproved] = useState(!!full?.approval);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [isSigning, setIsSigning] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
 
   if (!full || !company) {
     return (
@@ -39,15 +41,23 @@ export default function ApprovalScreen() {
   const { changeOrder: co, job, totals } = full;
   const currency = company.currency;
 
-  const handleClear = () => sigRef.current?.clearSignature();
+  const handleClear = () => {
+    sigRef.current?.clearSignature();
+    setHasSignature(false);
+    setIsSigning(false);
+  };
 
   const saveApproval = async (b64: string) => {
     setSaving(true);
     try {
       const base64Data = b64.replace(/^data:image\/\w+;base64,/, "");
+      if (!base64Data) throw new Error("The signature image was empty.");
+
       const filename = `signature-${co.id}-${Date.now()}.png`;
       const dest = `${FileSystem.documentDirectory}${filename}`;
-      await FileSystem.writeAsStringAsync(dest, base64Data, { encoding: FileSystem.EncodingType.Base64 });
+      await FileSystem.writeAsStringAsync(dest, base64Data, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
 
       recordApproval(co.id, {
         approverName: approverName.trim(),
@@ -61,10 +71,15 @@ export default function ApprovalScreen() {
       Alert.alert("Couldn't save approval", e?.message ?? "Please try again.");
     } finally {
       setSaving(false);
+      setIsSigning(false);
     }
   };
 
   const handleSignatureCaptured = (b64: string) => {
+    if (!b64 || !b64.startsWith("data:image")) {
+      Alert.alert("Signature required", "Please sign inside the box before approving.");
+      return;
+    }
     saveApproval(b64);
   };
 
@@ -73,6 +88,12 @@ export default function ApprovalScreen() {
       setNameError("Approver name is required.");
       return;
     }
+
+    if (!hasSignature) {
+      Alert.alert("Signature required", "Please sign inside the signature box before approving.");
+      return;
+    }
+
     if (full.approval) {
       const confirmed = await confirmAction({
         title: "Replace existing approval?",
@@ -82,7 +103,7 @@ export default function ApprovalScreen() {
       });
       if (!confirmed) return;
     }
-    // Triggers the signature pad to render current strokes to a base64 PNG via onOK.
+
     sigRef.current?.readSignature();
   };
 
@@ -102,36 +123,52 @@ export default function ApprovalScreen() {
 
   if (approved) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg, alignItems: "center", justifyContent: "center", padding: spacing.lg }}>
+      <SafeAreaView style={styles.successPage}>
         <Text style={styles.successCheck}>APPROVED ✓</Text>
         <Text style={styles.successCo}>{co.number}</Text>
         <MoneyText cents={totals.totalCents} currency={currency} size="large" />
         <Text style={styles.successSub}>Approval captured successfully</Text>
-        <View style={{ marginTop: spacing.xl, width: "100%", gap: spacing.sm }}>
-          <PrimaryButton title={generating ? "Generating..." : "Generate & Share PDF"} variant="accent" onPress={handleGeneratePdf} loading={generating} />
-          <PrimaryButton title="Done" variant="secondary" onPress={() => router.replace(`/(tabs)/extras/${co.id}`)} />
+        <View style={styles.successActions}>
+          <PrimaryButton
+            title={generating ? "Generating..." : "Generate & Share PDF"}
+            variant="accent"
+            onPress={handleGeneratePdf}
+            loading={generating}
+          />
+          <PrimaryButton
+            title="Done"
+            variant="secondary"
+            onPress={() => router.replace(`/(tabs)/extras/${co.id}`)}
+          />
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }} keyboardShouldPersistTaps="handled">
-        <Text style={typography.h1}>Approval</Text>
-        <Text style={styles.stepLabel}>Hand the phone to {co.requestedByName || "the approver"}</Text>
+    <SafeAreaView style={styles.page}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        scrollEnabled={!isSigning}
+      >
+        <Text style={typography.h1}>Approve extra work</Text>
+        <Text style={styles.stepLabel}>Hand the phone to {co.requestedByName || "the approver"}.</Text>
 
-        <Card style={{ marginTop: spacing.lg }}>
-          <Text style={styles.brandLine}>GetYourExtra change-order summary</Text>
+        <Card style={styles.summaryCard}>
+          <Text style={styles.brandLine}>CHANGE ORDER</Text>
           <Text style={styles.coNumberLine}>{co.number}</Text>
           <Text style={styles.jobLine} numberOfLines={2}>{job.name}</Text>
-          <Text style={styles.extraLine} numberOfLines={2}>{co.title}</Text>
-          <View style={{ marginTop: spacing.sm, alignItems: "center" }}>
+          <Text style={styles.extraLine} numberOfLines={3}>{co.title}</Text>
+          <View style={styles.totalWrap}>
             <MoneyText cents={totals.totalCents} currency={currency} size="large" />
           </View>
         </Card>
 
-        <Text style={styles.statement}>I acknowledge and approve the additional work and amount shown above.</Text>
+        <Text style={styles.statement}>
+          I acknowledge and approve the additional work and amount shown above.
+        </Text>
 
         <Card style={{ marginTop: spacing.md }}>
           <TextField
@@ -145,44 +182,119 @@ export default function ApprovalScreen() {
             placeholder="Full name"
             error={nameError}
           />
-          <TextField label="Approver company" value={approverCompany} onChangeText={setApproverCompany} />
-          <TextField label="Title (optional)" value={approverTitle} onChangeText={setApproverTitle} placeholder="Site Superintendent" />
+          <TextField
+            label="Company"
+            value={approverCompany}
+            onChangeText={setApproverCompany}
+            placeholder="Company or organization"
+          />
+          <TextField
+            label="Role / position (optional)"
+            value={approverTitle}
+            onChangeText={setApproverTitle}
+            placeholder="Project Manager, Site Superintendent..."
+          />
         </Card>
 
-        <Text style={[typography.h3, { marginTop: spacing.lg, marginBottom: spacing.sm }]}>Signature</Text>
-        <View style={styles.sigWrap}>
+        <View style={styles.signatureHeader}>
+          <View>
+            <Text style={typography.h3}>Signature</Text>
+            <Text style={styles.signatureHint}>Sign inside the box with your finger.</Text>
+          </View>
+          {hasSignature ? <Text style={styles.signatureReady}>Captured ✓</Text> : null}
+        </View>
+
+        <View
+          style={[styles.sigWrap, isSigning && styles.sigWrapActive]}
+          onTouchStart={() => setIsSigning(true)}
+          onTouchEnd={() => setIsSigning(false)}
+        >
           <SignatureScreen
             ref={sigRef}
             onOK={handleSignatureCaptured}
             onEmpty={() => Alert.alert("Signature required", "Please sign to approve this change order.")}
+            onBegin={() => {
+              setIsSigning(true);
+              setHasSignature(true);
+            }}
+            onEnd={() => setIsSigning(false)}
             autoClear={false}
             webStyle={sigWebStyle}
             descriptionText=""
           />
         </View>
 
-        <View style={{ marginTop: spacing.md, gap: spacing.sm }}>
-          <PrimaryButton title="Clear Signature" variant="secondary" onPress={handleClear} />
-          <PrimaryButton title={saving ? "Saving..." : "Approve Change Order"} variant="accent" onPress={handleApprovePress} loading={saving} />
+        <Pressable style={styles.clearButton} onPress={handleClear} hitSlop={8}>
+          <Text style={styles.clearButtonText}>Clear signature</Text>
+        </Pressable>
+
+        <View style={{ marginTop: spacing.md }}>
+          <PrimaryButton
+            title={saving ? "Saving..." : "Approve Change Order"}
+            variant="accent"
+            onPress={handleApprovePress}
+            loading={saving}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const sigWebStyle = `.m-signature-pad--footer { display: none; margin: 0; }
-  .m-signature-pad { box-shadow: none; border: none; margin: 0; }
-  body,html { background-color: #F5F6F8; }`;
+const sigWebStyle = `
+  .m-signature-pad--footer { display: none !important; margin: 0 !important; }
+  .m-signature-pad { box-shadow: none !important; border: none !important; margin: 0 !important; width: 100% !important; height: 100% !important; }
+  .m-signature-pad--body { border: none !important; left: 0 !important; right: 0 !important; top: 0 !important; bottom: 0 !important; }
+  canvas { background: #FFFFFF !important; }
+  body, html { width: 100%; height: 100%; margin: 0; padding: 0; background: #FFFFFF; overflow: hidden; }
+`;
 
 const styles = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   stepLabel: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
+  summaryCard: { marginTop: spacing.lg },
   brandLine: { ...typography.captionStrong, color: colors.brand, textAlign: "center" },
   coNumberLine: { ...typography.caption, color: colors.textMuted, textAlign: "center", marginTop: 2 },
   jobLine: { ...typography.bodyStrong, textAlign: "center", marginTop: 6 },
   extraLine: { ...typography.body, color: colors.textSecondary, textAlign: "center", marginTop: 2 },
-  statement: { ...typography.body, color: colors.textPrimary, marginTop: spacing.lg, fontStyle: "italic", textAlign: "center" },
-  sigWrap: { height: 220, backgroundColor: "#fff", borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, overflow: "hidden" },
+  totalWrap: { marginTop: spacing.sm, alignItems: "center" },
+  statement: {
+    ...typography.body,
+    color: colors.textPrimary,
+    marginTop: spacing.lg,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  signatureHeader: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  signatureHint: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
+  signatureReady: { color: colors.success, fontWeight: "700", fontSize: 13 },
+  sigWrap: {
+    height: 250,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  sigWrapActive: { borderColor: colors.brand, borderWidth: 2 },
+  clearButton: { alignSelf: "flex-end", paddingVertical: spacing.sm, paddingHorizontal: 2 },
+  clearButtonText: { color: colors.brand, fontWeight: "700" },
+  successPage: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
   successCheck: { fontSize: 26, fontWeight: "800", color: colors.success, marginBottom: spacing.xs },
   successCo: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.md },
   successSub: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm },
+  successActions: { marginTop: spacing.xl, width: "100%", gap: spacing.sm },
 });
