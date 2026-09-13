@@ -1,4 +1,3 @@
-import { v4 as uuid } from "uuid";
 import { getDb } from "@/db/client";
 import { formatChangeOrderNumber } from "@/lib/coNumber";
 import type { CompanyProfile, Currency, MarkupType } from "@/types";
@@ -11,6 +10,7 @@ function rowToCompany(row: any): CompanyProfile {
     companyName: row.companyName,
     logoUri: row.logoUri,
     ownerName: row.ownerName,
+    userRole: row.userRole ?? "",
     trade: row.trade,
     phone: row.phone,
     email: row.email,
@@ -57,7 +57,7 @@ export function saveCompanyProfile(input: CompanyProfileInput): CompanyProfile {
   if (existing) {
     db.runSync(
       `UPDATE company_profile SET
-        companyName=?, logoUri=?, ownerName=?, trade=?, phone=?, email=?, address=?,
+        companyName=?, logoUri=?, ownerName=?, userRole=?, trade=?, phone=?, email=?, address=?,
         city=?, region=?, postalCode=?, country=?, currency=?, taxEnabled=?, taxLabel=?,
         taxPercentBasisPoints=?, defaultLabourRateCents=?, defaultMarkupType=?,
         defaultMarkupValue=?, pdfFooterNote=?, licenseNumber=?, updatedAt=?
@@ -66,6 +66,7 @@ export function saveCompanyProfile(input: CompanyProfileInput): CompanyProfile {
         input.companyName,
         input.logoUri,
         input.ownerName,
+        input.userRole,
         input.trade,
         input.phone,
         input.email,
@@ -93,16 +94,17 @@ export function saveCompanyProfile(input: CompanyProfileInput): CompanyProfile {
   const id = SINGLETON_ID;
   db.runSync(
     `INSERT INTO company_profile (
-      id, companyName, logoUri, ownerName, trade, phone, email, address, city, region,
+      id, companyName, logoUri, ownerName, userRole, trade, phone, email, address, city, region,
       postalCode, country, currency, taxEnabled, taxLabel, taxPercentBasisPoints,
       defaultLabourRateCents, defaultMarkupType, defaultMarkupValue, pdfFooterNote,
       licenseNumber, nextChangeOrderSeq, createdAt, updatedAt
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id,
       input.companyName,
       input.logoUri,
       input.ownerName,
+      input.userRole,
       input.trade,
       input.phone,
       input.email,
