@@ -15,7 +15,7 @@ function uid() {
 async function compressImage(uri: string): Promise<string> {
   try {
     const result = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: 1400 } }], {
-      compress: 0.6,
+      compress: 0.68,
       format: ImageManipulator.SaveFormat.JPEG,
     });
     return result.uri;
@@ -39,11 +39,16 @@ export default function ProofStep() {
         );
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
       if (result.canceled || !result.assets?.[0]) return;
       setBusy(true);
       const compressed = await compressImage(result.assets[0].uri);
-      const photo: DraftPhoto = { localId: uid(), uri: compressed, caption: "", takenAt: new Date().toISOString() };
+      const photo: DraftPhoto = {
+        localId: uid(),
+        uri: compressed,
+        caption: "",
+        takenAt: new Date().toISOString(),
+      };
       updateDraft({ photos: [...draft.photos, photo] });
     } catch (e: any) {
       Alert.alert("Couldn't take photo", e?.message ?? "Please try again.");
@@ -64,7 +69,7 @@ export default function ProofStep() {
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
+        quality: 0.85,
         allowsMultipleSelection: true,
       });
       if (result.canceled || result.assets.length === 0) return;
@@ -73,9 +78,14 @@ export default function ProofStep() {
       for (const asset of result.assets) {
         try {
           const compressed = await compressImage(asset.uri);
-          newPhotos.push({ localId: uid(), uri: compressed, caption: "", takenAt: new Date().toISOString() });
+          newPhotos.push({
+            localId: uid(),
+            uri: compressed,
+            caption: "",
+            takenAt: new Date().toISOString(),
+          });
         } catch {
-          // Skip any single photo that can't be read/processed rather than failing the whole batch.
+          // Skip one unreadable photo instead of failing the entire selection.
         }
       }
       if (newPhotos.length === 0) {
@@ -90,47 +100,76 @@ export default function ProofStep() {
     }
   };
 
-  const removePhoto = (localId: string) => updateDraft({ photos: draft.photos.filter((p) => p.localId !== localId) });
+  const removePhoto = (localId: string) =>
+    updateDraft({ photos: draft.photos.filter((p) => p.localId !== localId) });
+
   const setCaption = (localId: string, caption: string) =>
-    updateDraft({ photos: draft.photos.map((p) => (p.localId === localId ? { ...p, caption } : p)) });
+    updateDraft({
+      photos: draft.photos.map((p) => (p.localId === localId ? { ...p, caption } : p)),
+    });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxl }}>
-        <Text style={typography.h1}>Proof</Text>
-        <Text style={styles.stepLabel}>Step 4 of 5 · Photos are optional but strongly recommended</Text>
+    <SafeAreaView style={styles.page}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+      >
+        <Text style={typography.h1}>Add proof</Text>
+        <Text style={styles.stepLabel}>Step 4 of 5 · Photos are optional, but they make approval easier.</Text>
 
-        <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg }}>
+        <View style={styles.photoButtons}>
           <View style={{ flex: 1 }}>
-            <PrimaryButton title="📷 Take Photo" onPress={addFromCamera} variant="secondary" loading={busy} />
+            <PrimaryButton title="Take Photo" onPress={addFromCamera} variant="secondary" loading={busy} />
           </View>
           <View style={{ flex: 1 }}>
-            <PrimaryButton title="🖼 Choose Existing" onPress={addFromLibrary} variant="secondary" loading={busy} />
+            <PrimaryButton title="Photo Library" onPress={addFromLibrary} variant="secondary" loading={busy} />
           </View>
         </View>
 
         {draft.photos.length === 0 ? (
-          <Card style={{ marginTop: spacing.lg }}>
-            <Text style={{ color: colors.textSecondary }}>
-              No photos yet. Good examples: before photo, requested work area, completed work, material installation.
+          <Card style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>No photos added yet</Text>
+            <Text style={styles.emptyBody}>
+              Useful proof includes the requested area, before/after photos, installed materials, or completed extra work.
             </Text>
           </Card>
         ) : (
-          <View style={{ marginTop: spacing.lg, gap: spacing.md }}>
+          <View style={styles.photoList}>
+            <Text style={styles.photoCount}>{draft.photos.length} photo{draft.photos.length === 1 ? "" : "s"} attached</Text>
             {draft.photos.map((p, index) => (
-              <Card key={p.localId} style={{ flexDirection: "row", gap: spacing.md }}>
-                <Image source={{ uri: p.uri }} style={styles.photo} onError={() => {}} />
+              <Card key={p.localId} style={styles.photoCard}>
+                <Image
+                  source={{ uri: p.uri }}
+                  style={styles.photo}
+                  onError={() => Alert.alert("Photo unavailable", "This photo can no longer be read. Remove it and add it again.")}
+                />
                 <View style={{ flex: 1 }}>
-                  <TextField placeholder="Caption (optional)" value={p.caption} onChangeText={(t) => setCaption(p.localId, t)} />
+                  <TextField
+                    placeholder="Caption (optional)"
+                    value={p.caption}
+                    onChangeText={(t) => setCaption(p.localId, t)}
+                  />
                   <View style={styles.photoActionsRow}>
                     <Pressable onPress={() => movePhoto(index, index - 1)} disabled={index === 0} hitSlop={8}>
-                      <Text style={[styles.reorderBtn, index === 0 && styles.reorderBtnDisabled]}>↑ Up</Text>
+                      <Text style={[styles.reorderBtn, index === 0 && styles.reorderBtnDisabled]}>Move up</Text>
                     </Pressable>
-                    <Pressable onPress={() => movePhoto(index, index + 1)} disabled={index === draft.photos.length - 1} hitSlop={8}>
-                      <Text style={[styles.reorderBtn, index === draft.photos.length - 1 && styles.reorderBtnDisabled]}>↓ Down</Text>
+                    <Pressable
+                      onPress={() => movePhoto(index, index + 1)}
+                      disabled={index === draft.photos.length - 1}
+                      hitSlop={8}
+                    >
+                      <Text
+                        style={[
+                          styles.reorderBtn,
+                          index === draft.photos.length - 1 && styles.reorderBtnDisabled,
+                        ]}
+                      >
+                        Move down
+                      </Text>
                     </Pressable>
                     <Pressable onPress={() => removePhoto(p.localId)} hitSlop={8}>
-                      <Text style={{ color: colors.danger, fontWeight: "600" }}>Remove</Text>
+                      <Text style={styles.removeBtn}>Remove</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -140,8 +179,15 @@ export default function ProofStep() {
         )}
 
         <Card style={{ marginTop: spacing.lg }}>
-          <SectionLabel>Site Notes (optional)</SectionLabel>
-          <TextField value={draft.siteNotes} onChangeText={(t) => updateDraft({ siteNotes: t })} multiline numberOfLines={3} style={{ minHeight: 80, textAlignVertical: "top" }} />
+          <SectionLabel>Site notes (optional)</SectionLabel>
+          <TextField
+            value={draft.siteNotes}
+            onChangeText={(t) => updateDraft({ siteNotes: t })}
+            multiline
+            numberOfLines={3}
+            placeholder="Anything the approver should know about the site condition or work completed..."
+            style={{ minHeight: 92, textAlignVertical: "top" }}
+          />
         </Card>
 
         <View style={{ marginTop: spacing.lg }}>
@@ -153,9 +199,19 @@ export default function ProofStep() {
 }
 
 const styles = StyleSheet.create({
+  page: { flex: 1, backgroundColor: colors.bg },
+  content: { padding: spacing.lg, paddingBottom: spacing.xxl },
   stepLabel: { ...typography.caption, color: colors.textMuted, marginTop: 4 },
-  photo: { width: 84, height: 84, borderRadius: radii.md },
-  photoActionsRow: { flexDirection: "row", gap: spacing.md, marginTop: 4, alignItems: "center" },
+  photoButtons: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.lg },
+  emptyCard: { marginTop: spacing.lg },
+  emptyTitle: { ...typography.bodyStrong, color: colors.textPrimary },
+  emptyBody: { ...typography.body, color: colors.textSecondary, marginTop: 4 },
+  photoList: { marginTop: spacing.lg, gap: spacing.md },
+  photoCount: { ...typography.captionStrong, color: colors.textSecondary },
+  photoCard: { flexDirection: "row", gap: spacing.md },
+  photo: { width: 92, height: 92, borderRadius: radii.md, backgroundColor: colors.bg },
+  photoActionsRow: { flexDirection: "row", gap: spacing.md, marginTop: 4, alignItems: "center", flexWrap: "wrap" },
   reorderBtn: { color: colors.brand, fontWeight: "600", fontSize: 13 },
   reorderBtnDisabled: { color: colors.textMuted },
+  removeBtn: { color: colors.danger, fontWeight: "600", fontSize: 13 },
 });
