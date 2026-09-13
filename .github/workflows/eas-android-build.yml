@@ -2,6 +2,9 @@ name: EAS Android Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
@@ -24,4 +27,5 @@ jobs:
       - name: Start Android production build
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          NODE_ENV: production
         run: eas build --platform android --profile production --non-interactive
