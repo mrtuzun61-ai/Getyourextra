@@ -1,7 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
 const DB_NAME = "getyourextra.db";
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -35,6 +35,10 @@ export async function initDatabase(): Promise<void> {
 
   if (currentVersion < 1) {
     runMigrationV1(db);
+  }
+
+  if (currentVersion < 2) {
+    runMigrationV2(db);
   }
 
   db.runSync(
@@ -161,6 +165,14 @@ function runMigrationV1(db: SQLite.SQLiteDatabase) {
     CREATE INDEX IF NOT EXISTS idx_line_items_changeOrderId ON line_items(changeOrderId);
     CREATE INDEX IF NOT EXISTS idx_photos_changeOrderId ON change_order_photos(changeOrderId);
   `);
+}
+
+function runMigrationV2(db: SQLite.SQLiteDatabase) {
+  const columns = db.getAllSync<{ name: string }>("PRAGMA table_info(company_profile)");
+  const hasUserRole = columns.some((column) => column.name === "userRole");
+  if (!hasUserRole) {
+    db.execSync(`ALTER TABLE company_profile ADD COLUMN userRole TEXT NOT NULL DEFAULT '';`);
+  }
 }
 
 /** Drops and recreates all tables. Intended for developer/manual QA use only, never called by the app UI. */
